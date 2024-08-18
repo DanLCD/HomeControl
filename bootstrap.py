@@ -21,6 +21,7 @@ from bless import GATTCharacteristicProperties  # type: ignore
 from appliances import lamp, motor
 
 logger = logging.getLogger('homecontrol')
+logger.setLevel(logging.DEBUG)
 logging.basicConfig()
 
 P = ParamSpec('P')
