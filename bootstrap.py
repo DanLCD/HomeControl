@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import socket
 from inspect import isawaitable as _isawaitable
 from typing import Any, Awaitable, Callable, ParamSpec, TypedDict, TypeVar
@@ -18,6 +19,9 @@ from bless import GATTAttributePermissions  # type: ignore
 from bless import GATTCharacteristicProperties  # type: ignore
 
 from appliances import lamp, motor
+
+logger = logging.getLogger('homecontrol')
+logging.basicConfig()
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -92,6 +96,7 @@ class IoTService(UpnpServerService):
         Any
             The result of this action.
         """
+        logger.debug(f'Setting lamp appliance state to {NewLampState}')
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, lamp.set_state, NewLampState)
@@ -114,6 +119,7 @@ class IoTService(UpnpServerService):
         Any
             The result of this action.
         """
+        logger.debug(f'Setting motor appliance state to {NewMotorState}')
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, motor.set_state, NewMotorState)
@@ -178,12 +184,12 @@ class BluetoothBeacon(BlessServer):
         await super().start(**kwargs)
 
     def read_request_func(self, characteristic: BlessGATTCharacteristic, **kwargs) -> bytearray:
-        print(f"Reading {characteristic.value}")
+        logger.debug(f"Reading {characteristic.value}")
         return characteristic.value
 
     def write_request_func(self, characteristic: BlessGATTCharacteristic, value: Any, **kwargs):
         characteristic.value = value
-        print(f"{characteristic.uuid}: Char value set to {characteristic.value} type({type(characteristic.value)})")
+        logger.debug(f"{characteristic.uuid}: Char value set to {characteristic.value} type({type(characteristic.value)})")
 
         if characteristic.uuid == CHARACTERISTIC_UUID:
             if self._charbuff_evt.is_set():
@@ -191,10 +197,10 @@ class BluetoothBeacon(BlessServer):
                 self._charbuff_evt.clear()
 
             if characteristic.value == b"\x0f":
-                print('Clearing buffer')
+                logger.debug('Clearing buffer')
                 self._charbuff_evt.set()
             else:
-                print('Appended to character buffer')
+                logger.debug('Appended to character buffer')
                 self._charbuff.extend(characteristic.value)
 
 def internet(host="8.8.8.8", port=53, timeout=3):
@@ -229,21 +235,21 @@ async def request_wifi_credentials(filter: Callable[[WiFiCredentials], bool | Aw
     server = BluetoothBeacon(loop=loop)
 
     await server.start()
-    print(server.get_characteristic(CHARACTERISTIC_UUID))
-    print("Advertising")
-    print(f"Write '0xF' to the advertised characteristic: {CHARACTERISTIC_UUID}")
+    logger.debug(server.get_characteristic(CHARACTERISTIC_UUID))
+    logger.debug("Advertising")
+    logger.debug(f"Write '0xF' to the advertised characteristic: {CHARACTERISTIC_UUID}")
 
     while True:
         value = await server.wait_read_value()
-        print(f'Value updated to: {value} (len: {len(value)})')
+        logger.debug(f'Value updated to: {value} (len: {len(value)})')
         try:
             payload: WiFiCredentials = json.loads(value)
         except json.decoder.JSONDecodeError:
-            print(f'Invalid payload received: \'{value}\'. Retrying connection.')
+            logger.debug(f'Invalid payload received: \'{value}\'. Retrying connection.')
             continue
 
         if filter is not None and not await maybe_coroutine(filter, payload):
-            print('Invalid network credentials. Retrying connection.')
+            logger.debug('Invalid network credentials. Retrying connection.')
             continue
 
         await server.stop()
@@ -264,7 +270,8 @@ async def connect_to_wifi(credentials: WiFiCredentials) -> bool:
         scheme = wifi.Scheme.for_cell('wlan0', credentials['ssid'], cells[0], credentials['password'])
         scheme.save()
         scheme.activate()
-    except wifi.exceptions.ConnectionError:
+    except wifi.exceptions.ConnectionError as e:
+        logger.info('Connection failed', exc_info=e)
         return False
 
     return True
@@ -273,19 +280,25 @@ async def run():
     loop = asyncio.get_event_loop()
 
     if await loop.run_in_executor(None, internet) is False:
+        logger.info('Connecting to Wi-Fi')
         connected = False
 
         if len(saved_credentials) != 0:
+            logger.info('Searching saved Wi-Fi credentials')
             # prioritizes the last saved credentials
             for credentials in reversed(saved_credentials):
+                logger.info(f'Trying connection to {credentials['ssid']}')
                 if await connect_to_wifi(credentials):
                     connected = True
                     break
 
         if len(saved_credentials) == 0 or connected is False:
+            logger.info('Requesting Wi-Fi credentials through Bluetooth')
             credentials = await request_wifi_credentials(connect_to_wifi)
             await loop.run_in_executor(None, save_credentials, credentials)
+            logger.info(f'Credentials saved for {credentials['ssid']}')
 
+    logger.info('Initializing IoT UPnP service')
     server = UpnpServer(IoTDevice, (IP, 6969), http_port=8586)
 
     await server.async_start()
