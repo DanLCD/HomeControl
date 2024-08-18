@@ -16,7 +16,7 @@ from bless import (
 
 IP = get_local_ip()
 SERVICE_UUID = 'fcb7f125-606c-57cd-924f-3482a9c10323'
-CHARACTERISTIC_UUID = '51FF12BB-3ED8-46E5-B4F9-D64E2FEC021B'
+CHARACTERISTIC_UUID = '51ff12bb-3ed8-46e5-b4f9-d64e2fec021b'
 
 class IoTService(UpnpServerService):
     SERVICE_DEFINITION = ServiceInfo(
