@@ -184,26 +184,26 @@ class BluetoothBeacon(BlessServer):
         await super().start(**kwargs)
 
     def read_request_func(self, characteristic: BlessGATTCharacteristic, **kwargs) -> bytearray:
-        logger.debug(f"Reading {characteristic.value}")
+        logger.debug(f'Reading {characteristic.value}')
         return characteristic.value
 
     def write_request_func(self, characteristic: BlessGATTCharacteristic, value: Any, **kwargs):
         characteristic.value = value
-        logger.debug(f"{characteristic.uuid}: Char value set to {characteristic.value} type({type(characteristic.value)})")
+        logger.debug(f'{characteristic.uuid}: Char value set to {characteristic.value} type({type(characteristic.value)})')
 
         if characteristic.uuid == CHARACTERISTIC_UUID:
             if self._charbuff_evt.is_set():
                 self._charbuff.clear()
                 self._charbuff_evt.clear()
 
-            if characteristic.value == b"\x0f":
+            if characteristic.value == b'\x0f':
                 logger.debug('Clearing buffer')
                 self._charbuff_evt.set()
             else:
                 logger.debug('Appended to character buffer')
                 self._charbuff.extend(characteristic.value)
 
-def internet(host="8.8.8.8", port=53, timeout=3):
+def internet(host='8.8.8.8', port=53, timeout=3):
     """
     Host: 8.8.8.8 (google-public-dns-a.google.com)
     OpenPort: 53/tcp
@@ -236,8 +236,8 @@ async def request_wifi_credentials(filter: Callable[[WiFiCredentials], bool | Aw
 
     await server.start()
     logger.debug(server.get_characteristic(CHARACTERISTIC_UUID))
-    logger.debug("Advertising")
-    logger.debug(f"Write '0xF' to the advertised characteristic: {CHARACTERISTIC_UUID}")
+    logger.debug('Advertising')
+    logger.debug(f'Write \'0xF\' to the advertised characteristic: {CHARACTERISTIC_UUID}')
 
     while True:
         value = await server.wait_read_value()
@@ -296,7 +296,7 @@ async def run():
             logger.info('Requesting Wi-Fi credentials through Bluetooth')
             credentials = await request_wifi_credentials(connect_to_wifi)
             await loop.run_in_executor(None, save_credentials, credentials)
-            logger.info(f'Credentials saved for {credentials['ssid']}')
+            logger.info(f'Credentials saved for {credentials["ssid"]}')
 
     logger.info('Initializing IoT UPnP service')
     server = UpnpServer(IoTDevice, (IP, 6969), http_port=8586)
