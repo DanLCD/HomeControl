@@ -79,8 +79,6 @@ class BluetoothBeacon(BlessServer):
         return self._charbuff
 
     async def start(self, **kwargs):
-        await super().start(**kwargs)
-
         await self.add_new_service(SERVICE_UUID)
 
         # Add a Characteristic to the service
@@ -93,6 +91,8 @@ class BluetoothBeacon(BlessServer):
         await self.add_new_characteristic(
             SERVICE_UUID, CHARACTERISTIC_UUID, char_flags, None, permissions
         )
+
+        await super().start(**kwargs)
 
     def read_request_func(self, characteristic: BlessGATTCharacteristic, **kwargs) -> bytearray:
         print(f"Reading {characteristic.value}")
