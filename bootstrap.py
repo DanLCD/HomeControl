@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import Any
 from async_upnp_client.server import UpnpServer, UpnpServerDevice, UpnpServerService, callable_action, create_event_var
 from async_upnp_client.const import DeviceInfo, ServiceInfo
@@ -117,14 +118,14 @@ async def run():
     # Instantiate the server
     server = BluetoothBeacon(loop=loop)
 
-
     print(server.get_characteristic(CHARACTERISTIC_UUID))
     await server.start()
     print("Advertising")
     print(f"Write '0xF' to the advertised characteristic: {CHARACTERISTIC_UUID}")
 
     value = await server.wait_read_value()
-    print(value)
+    print(f'Value updated to: {value} (len: {len(value)})')
+    print(json.loads(value))
 
     await asyncio.sleep(2)
     print("Updating")
