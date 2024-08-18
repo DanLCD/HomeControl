@@ -287,7 +287,7 @@ async def run():
             logger.info('Searching saved Wi-Fi credentials')
             # prioritizes the last saved credentials
             for credentials in reversed(saved_credentials):
-                logger.info(f'Trying connection to {credentials['ssid']}')
+                logger.info(f'Trying connection to {credentials["ssid"]}')
                 if await connect_to_wifi(credentials):
                     connected = True
                     break
