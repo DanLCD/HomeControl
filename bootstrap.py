@@ -17,7 +17,7 @@ from bless import BlessServer  # type: ignore
 from bless import GATTAttributePermissions  # type: ignore
 from bless import GATTCharacteristicProperties  # type: ignore
 
-from .appliances import lamp, motor
+from appliances import lamp, motor
 
 P = ParamSpec('P')
 T = TypeVar('T')
