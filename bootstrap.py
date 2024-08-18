@@ -68,8 +68,8 @@ class IoTDevice(UpnpServerDevice):
     ROUTES = []
 
 class BluetoothBeacon(BlessServer):
-    def __init__(self, name: str='Banco de trabajo inteligente', loop: asyncio.AbstractEventLoop | None = None, name_overwrite: bool = False, **kwargs):
-        super().__init__(name, loop, name_overwrite, **kwargs)
+    def __init__(self, name: str='Banco de trabajo inteligente', loop: asyncio.AbstractEventLoop | None = None, *args, **kwargs):
+        super().__init__(name, loop, *args, **kwargs)
 
         self._charbuff = bytearray()
         self._charbuff_evt = asyncio.Event()
