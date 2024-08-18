@@ -100,7 +100,7 @@ class BluetoothBeacon(BlessServer):
 
     def write_request_func(self, characteristic: BlessGATTCharacteristic, value: Any, **kwargs):
         characteristic.value = value
-        print(f"Char value set to {characteristic.value} type({type(characteristic.value)})")
+        print(f"{characteristic.uuid}: Char value set to {characteristic.value} type({type(characteristic.value)})")
 
         if characteristic.uuid == CHARACTERISTIC_UUID:
             if self._charbuff_evt.is_set():
