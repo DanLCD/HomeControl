@@ -1,18 +1,18 @@
 import asyncio
 import sys
 import threading
-from typing import Union
+from typing import Any, Union
 from async_upnp_client.server import UpnpServer, UpnpServerDevice, UpnpServerService, callable_action, create_event_var
 from async_upnp_client.const import DeviceInfo, ServiceInfo
 from async_upnp_client.utils import get_local_ip
 
 from xml.etree import ElementTree as ET
 
-from bless import (  # type: ignore
-    BlessServer,
-    BlessGATTCharacteristic,
-    GATTCharacteristicProperties,
-    GATTAttributePermissions,
+from bless import (
+    BlessServer, # type: ignore
+    BlessGATTCharacteristic, # type: ignore
+    GATTCharacteristicProperties, # type: ignore
+    GATTAttributePermissions, # type: ignore
 )
 
 IP = get_local_ip()
