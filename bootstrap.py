@@ -118,8 +118,8 @@ async def run():
     # Instantiate the server
     server = BluetoothBeacon(loop=loop)
 
-    print(server.get_characteristic(CHARACTERISTIC_UUID))
     await server.start()
+    print(server.get_characteristic(CHARACTERISTIC_UUID))
     print("Advertising")
     print(f"Write '0xF' to the advertised characteristic: {CHARACTERISTIC_UUID}")
 
