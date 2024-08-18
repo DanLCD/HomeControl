@@ -9,9 +9,11 @@ from xml.etree import ElementTree as ET
 import wifi
 import wifi.exceptions
 from async_upnp_client.const import DeviceInfo, ServiceInfo
+from async_upnp_client.client import UpnpStateVariable
 from async_upnp_client.server import (UpnpServer, UpnpServerDevice,
                                       UpnpServerService, callable_action,
                                       create_event_var)
+
 from async_upnp_client.utils import get_local_ip
 from bless import BlessGATTCharacteristic  # type: ignore
 from bless import BlessServer  # type: ignore
@@ -81,6 +83,19 @@ class IoTService(UpnpServerService):
     )
     STATE_VARIABLE_DEFINITIONS = {'LampState': create_event_var('boolean', default='false'), 'MotorState': create_event_var('boolean', default='false')}
 
+    @callable_action('GetLampState', {}, {'CurrentLampState': 'LampState'})
+    async def get_lamp_state(self) -> dict[str, UpnpStateVariable]:
+        r"""|coro|
+
+        Gets the current lamp state.
+
+        Returns
+        --------
+        bool
+            The current state of this appliance.
+        """
+        return {'CurrentLampState': self.state_variable('LampState')}
+
     @callable_action('SetLampState', {'NewLampState': 'LampState'}, {})
     async def set_lamp_state(self, NewLampState: bool):
         r"""|coro|
@@ -103,6 +118,19 @@ class IoTService(UpnpServerService):
         await loop.run_in_executor(None, lamp.set_state, NewLampState)
         self.state_variable('LampState').value = NewLampState
         return {}
+
+    @callable_action('GetMotorState', {}, {'CurrentMotorState': 'MotorState'})
+    async def get_motor_state(self) -> dict[str, UpnpStateVariable]:
+        r"""|coro|
+
+        Gets the current motor state.
+
+        Returns
+        --------
+        bool
+            The current state of this appliance.
+        """
+        return {'CurrentMotorState': self.state_variable('MotorState')}
 
     @callable_action('SetMotorState', {'NewMotorState': 'MotorState'}, {})
     async def set_motor_state(self, NewMotorState: bool):
