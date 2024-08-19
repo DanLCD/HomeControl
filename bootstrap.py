@@ -228,9 +228,31 @@ class BluetoothBeacon(BlessServer):
             if characteristic.value == b'\x0f':
                 logger.debug('Clearing buffer')
                 self._charbuff_evt.set()
+                self._process_data(self._charbuff)
             else:
                 logger.debug('Appended to character buffer')
                 self._charbuff.extend(characteristic.value)
+
+    def _process_data(self, data: bytearray) -> None:
+        try:
+            payload: dict = json.loads(data)
+        except json.decoder.JSONDecodeError:
+            logger.error('Invalid payload received')
+            return
+        self._handle_payload(payload)
+
+      def _handle_payload(self, payload: dict) -> None:
+          a = payload['a']
+          d = payload['d']
+
+          if a == 'GET_LAMP_STATE':
+              return
+          elif a == 'SET_LAMP_STATE':
+              lamp.set_state(d)
+          elif a == 'GET_MOTOR_STATE':
+              return
+          elif a == 'SET_MOTOR_STATE':
+              motor.set_state(d)
 
 def internet(host='8.8.8.8', port=53, timeout=3):
     """
@@ -257,13 +279,9 @@ def save_credentials(new_credentials: WiFiCredentials):
         saved_credentials.append(new_credentials)
         json.dump(saved_credentials, f)
 
-async def request_wifi_credentials(filter: Callable[[WiFiCredentials], bool | Awaitable[bool]] | None = None) -> WiFiCredentials:
+async def request_wifi_credentials(server: BluetoothServer, filter: Callable[[WiFiCredentials], bool | Awaitable[bool]] | None = None) -> WiFiCredentials:
     loop = asyncio.get_event_loop()
 
-    # Instantiate the server
-    server = BluetoothBeacon(loop=loop)
-
-    await server.start()
     logger.debug(server.get_characteristic(CHARACTERISTIC_UUID))
     logger.debug('Advertising')
     logger.debug(f'Write \'0xF\' to the advertised characteristic: {CHARACTERISTIC_UUID}')
@@ -277,11 +295,13 @@ async def request_wifi_credentials(filter: Callable[[WiFiCredentials], bool | Aw
             logger.debug(f'Invalid payload received: \'{value}\'. Retrying connection.')
             continue
 
-        if filter is not None and not await maybe_coroutine(filter, payload):
+        if payload['a'] != 'SET_NETWORK_CREDENTIALS':
+            continue
+
+        if filter is not None and not await maybe_coroutine(filter, payload['d']):
             logger.debug('Invalid network credentials. Retrying connection.')
             continue
 
-        await server.stop()
         return payload
 
 async def connect_to_wifi(credentials: WiFiCredentials) -> bool:
@@ -308,6 +328,9 @@ async def connect_to_wifi(credentials: WiFiCredentials) -> bool:
 async def run():
     loop = asyncio.get_event_loop()
 
+    bluetooth_server = BluetoothBeacon(loop=loop)
+    await bluetooth_server.start()
+
     if await loop.run_in_executor(None, internet) is False:
         logger.info('Connecting to Wi-Fi')
         connected = False
@@ -323,7 +346,7 @@ async def run():
 
         if len(saved_credentials) == 0 or connected is False:
             logger.info('Requesting Wi-Fi credentials through Bluetooth')
-            credentials = await request_wifi_credentials(connect_to_wifi)
+            credentials = await request_wifi_credentials(bluetooth_server, connect_to_wifi)
             await loop.run_in_executor(None, save_credentials, credentials)
             logger.info(f'Credentials saved for {credentials["ssid"]}')
 
