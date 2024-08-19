@@ -81,7 +81,7 @@ class IoTService(UpnpServerService):
         scpd_url = '/scpd.xml',
         xml = ET.Element('xservice')
     )
-    STATE_VARIABLE_DEFINITIONS = {'LampState': create_event_var('boolean', default='false'), 'MotorState': create_event_var('boolean', default='false')}
+    STATE_VARIABLE_DEFINITIONS = {'LampState': create_event_var('boolean', default='0'), 'MotorState': create_event_var('boolean', default='0')}
 
     @callable_action('GetLampState', {}, {'CurrentLampState': 'LampState'})
     async def get_lamp_state(self) -> dict[str, UpnpStateVariable]:
