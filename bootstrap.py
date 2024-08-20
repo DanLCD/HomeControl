@@ -9,7 +9,7 @@ from xml.etree import ElementTree as ET
 import wifi
 import wifi.exceptions
 from async_upnp_client.const import DeviceInfo, ServiceInfo
-from async_upnp_client.client import UpnpStateVariable
+from async_upnp_client.client import UpnpRequester, UpnpStateVariable
 from async_upnp_client.server import (UpnpServer, UpnpServerDevice,
                                       UpnpServerService, callable_action,
                                       create_event_var)
@@ -60,7 +60,10 @@ async def maybe_coroutine(f: Callable[P, T | Awaitable[T]], *args: P.args, **kwa
 
 IP = get_local_ip()
 SERVICE_UUID = 'fcb7f125-606c-57cd-924f-3482a9c10323'
-CHARACTERISTIC_UUID = '51ff12bb-3ed8-46e5-b4f9-d64e2fec021b'
+NETWORK_CHARACTERISTIC_UUID = '51ff12bb-3ed8-46e5-b4f9-d64e2fec021b'
+CONNECTED_CHARACTERISTIC_UUID = '28f2d950-79bd-5926-8872-648c716f231d'
+LAMP_CHARACTERISTIC_UUID = 'fb63904f-5d09-5c7b-8d2c-acb56a159a8f'
+MOTOR_CHARACTERISTIC_UUID = '4ce334f7-e255-5c56-a9ad-1e593f447a8c'
 
 try:
     with open('./credentials.json', 'r') as f:
@@ -82,6 +85,15 @@ class IoTService(UpnpServerService):
         xml = ET.Element('xservice')
     )
     STATE_VARIABLE_DEFINITIONS = {'LampState': create_event_var('boolean', default='0'), 'MotorState': create_event_var('boolean', default='0')}
+
+    def __init__(self, requester: UpnpRequester) -> None:
+        super().__init__(requester)
+
+        lamp.add_hook(self.sync_lamp_state)
+        motor.add_hook(self.sync_motor_state)
+
+    def sync_lamp_state(self) -> None:
+        self.state_variable('LampState').value = lamp.state
 
     @callable_action('GetLampState', {}, {'CurrentLampState': 'LampState'})
     async def get_lamp_state(self) -> dict[str, UpnpStateVariable]:
@@ -118,6 +130,9 @@ class IoTService(UpnpServerService):
         await loop.run_in_executor(None, lamp.set_state, NewLampState)
         self.state_variable('LampState').value = NewLampState
         return {}
+
+    def sync_motor_state(self) -> None:
+        self.state_variable('MotorState').value = motor.state
 
     @callable_action('GetMotorState', {}, {'CurrentMotorState': 'MotorState'})
     async def get_motor_state(self) -> dict[str, UpnpStateVariable]:
@@ -189,14 +204,24 @@ class BluetoothBeacon(BlessServer):
     def __init__(self, name: str = 'Banco de trabajo inteligente', loop: asyncio.AbstractEventLoop | None = None, *args, **kwargs):
         super().__init__(name, loop, *args, **kwargs)
 
-        self._charbuff = bytearray()
-        self._charbuff_evt = asyncio.Event()
+        self.credentials_received = asyncio.Event()
 
-    async def wait_read_value(self) -> bytearray:
-        await self._charbuff_evt.wait()
-        return self._charbuff
+    def sync_lamp_state(self) -> None:
+        characteristic = self.get_characteristic(LAMP_CHARACTERISTIC_UUID)
+
+        if characteristic is not None:
+            characteristic.value = bytearray(lamp.state)
+
+    def sync_motor_state(self) -> None:
+        characteristic = self.get_characteristic(MOTOR_CHARACTERISTIC_UUID)
+
+        if characteristic is not None:
+            characteristic.value = bytearray(motor.state)
 
     async def start(self, **kwargs):
+        loop = asyncio.get_event_loop()
+        connected = await loop.run_in_executor(None, internet)
+
         await self.add_new_service(SERVICE_UUID)
 
         # Add a Characteristic to the service
@@ -207,52 +232,63 @@ class BluetoothBeacon(BlessServer):
         )
         permissions = GATTAttributePermissions.readable | GATTAttributePermissions.writeable
         await self.add_new_characteristic(
-            SERVICE_UUID, CHARACTERISTIC_UUID, char_flags, None, permissions
+            SERVICE_UUID, NETWORK_CHARACTERISTIC_UUID, GATTCharacteristicProperties.write, None, GATTAttributePermissions.writeable
         )
+        await self.add_new_characteristic(
+            SERVICE_UUID, CONNECTED_CHARACTERISTIC_UUID, GATTCharacteristicProperties.read, bytearray(connected), GATTAttributePermissions.readable
+        )
+        await self.add_new_characteristic(
+            SERVICE_UUID, LAMP_CHARACTERISTIC_UUID, char_flags, bytearray(lamp.state), permissions
+        )
+        await self.add_new_characteristic(
+            SERVICE_UUID, MOTOR_CHARACTERISTIC_UUID, char_flags, bytearray(motor.state), permissions
+        )
+
+        lamp.add_hook(self.sync_lamp_state)
+        motor.add_hook(self.sync_motor_state)
 
         await super().start(**kwargs)
 
+    async def stop(self):
+        lamp.remove_hook(self.sync_lamp_state)
+        motor.remove_hook(self.sync_motor_state)
+
+        await super().stop()
+
     def read_request_func(self, characteristic: BlessGATTCharacteristic, **kwargs) -> bytearray:
-        logger.debug(f'Reading {characteristic.value}')
+        logger.debug(f'Reading {characteristic.uuid}')
+
+        if characteristic.uuid == MOTOR_CHARACTERISTIC_UUID:
+            return bytearray(motor.state)
+        elif characteristic.uuid == LAMP_CHARACTERISTIC_UUID:
+            return bytearray(lamp.state)
+        elif characteristic.uuid == CONNECTED_CHARACTERISTIC_UUID:
+            return bytearray(internet())
+
         return characteristic.value
 
     def write_request_func(self, characteristic: BlessGATTCharacteristic, value: Any, **kwargs):
         characteristic.value = value
+
         logger.debug(f'{characteristic.uuid}: Char value set to {characteristic.value} type({type(characteristic.value)})')
 
-        if characteristic.uuid == CHARACTERISTIC_UUID:
-            if self._charbuff_evt.is_set():
-                self._charbuff.clear()
-                self._charbuff_evt.clear()
+        if characteristic.uuid == MOTOR_CHARACTERISTIC_UUID:
+            motor.state = bool(value)
+        elif characteristic.uuid == LAMP_CHARACTERISTIC_UUID:
+            lamp.state = bool(value)
+        elif characteristic.uuid == NETWORK_CHARACTERISTIC_UUID:
+            asyncio.create_task(self._attempt_connection(value))
 
-            if characteristic.value == b'\x0f':
-                logger.debug('Clearing buffer')
-                self._charbuff_evt.set()
-                self._process_data(self._charbuff)
-            else:
-                logger.debug('Appended to character buffer')
-                self._charbuff.extend(characteristic.value)
-
-    def _process_data(self, data: bytearray) -> None:
+    async def _attempt_connection(self, data: bytearray) -> None:
         try:
-            payload: dict = json.loads(data)
+            payload: WiFiCredentials = json.loads(data)
         except json.decoder.JSONDecodeError:
-            logger.error('Invalid payload received')
+            logger.debug(f'Invalid payload received: \'{data}\'. Ignoring request.')
             return
-        self._handle_payload(payload)
 
-      def _handle_payload(self, payload: dict) -> None:
-          a = payload['a']
-          d = payload['d']
+        if await connect_to_wifi(payload):
+            self.credentials_received.set()
 
-          if a == 'GET_LAMP_STATE':
-              return
-          elif a == 'SET_LAMP_STATE':
-              lamp.set_state(d)
-          elif a == 'GET_MOTOR_STATE':
-              return
-          elif a == 'SET_MOTOR_STATE':
-              motor.set_state(d)
 
 def internet(host='8.8.8.8', port=53, timeout=3):
     """
@@ -278,31 +314,6 @@ def save_credentials(new_credentials: WiFiCredentials):
         saved_credentials: list[WiFiCredentials] = json.load(f)
         saved_credentials.append(new_credentials)
         json.dump(saved_credentials, f)
-
-async def request_wifi_credentials(server: BluetoothServer, filter: Callable[[WiFiCredentials], bool | Awaitable[bool]] | None = None) -> WiFiCredentials:
-    loop = asyncio.get_event_loop()
-
-    logger.debug(server.get_characteristic(CHARACTERISTIC_UUID))
-    logger.debug('Advertising')
-    logger.debug(f'Write \'0xF\' to the advertised characteristic: {CHARACTERISTIC_UUID}')
-
-    while True:
-        value = await server.wait_read_value()
-        logger.debug(f'Value updated to: {value} (len: {len(value)})')
-        try:
-            payload: WiFiCredentials = json.loads(value)
-        except json.decoder.JSONDecodeError:
-            logger.debug(f'Invalid payload received: \'{value}\'. Retrying connection.')
-            continue
-
-        if payload['a'] != 'SET_NETWORK_CREDENTIALS':
-            continue
-
-        if filter is not None and not await maybe_coroutine(filter, payload['d']):
-            logger.debug('Invalid network credentials. Retrying connection.')
-            continue
-
-        return payload
 
 async def connect_to_wifi(credentials: WiFiCredentials) -> bool:
     if any(not credentials.get(x) for x in ('ssid', 'type')):
@@ -335,7 +346,7 @@ async def run():
         logger.info('Connecting to Wi-Fi')
         connected = False
 
-        if len(saved_credentials) != 0:
+        if len(saved_credentials) > 0:
             logger.info('Searching saved Wi-Fi credentials')
             # prioritizes the last saved credentials
             for credentials in reversed(saved_credentials):
@@ -344,11 +355,9 @@ async def run():
                     connected = True
                     break
 
-        if len(saved_credentials) == 0 or connected is False:
-            logger.info('Requesting Wi-Fi credentials through Bluetooth')
-            credentials = await request_wifi_credentials(bluetooth_server, connect_to_wifi)
-            await loop.run_in_executor(None, save_credentials, credentials)
-            logger.info(f'Credentials saved for {credentials["ssid"]}')
+        if connected is False:
+            logger.info('Waiting for Wi-Fi credentials from Bluetooth')
+            await bluetooth_server.credentials_received.wait()
 
     logger.info('Initializing IoT UPnP service')
     server = UpnpServer(IoTDevice, (IP, 6969), http_port=8586)
