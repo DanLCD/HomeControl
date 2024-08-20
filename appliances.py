@@ -20,6 +20,11 @@ class Appliance:
     def state(self, state: bool) -> None:
         self._state = state
         GPIO.output(self.pin, state)
+        for hook in self._hooks:
+            try:
+                hook()
+            except Exception:
+                continue
 
     def set_state(self, state: bool) -> None:
         self.state = state
