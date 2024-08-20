@@ -6,11 +6,11 @@ Hook: TypeAlias = Callable[[], None]
 GPIO.setmode(GPIO.BOARD)
 
 class Appliance:
-    def __init__(self, pin: int) -> None:
+    def __init__(self, pin: int, value=False) -> None:
         self.pin = pin
         self._hooks: list[Hook] = []
-        GPIO.setup(pin, GPIO.LOW)
-        self.state = False
+        GPIO.setup(pin, GPIO.OUT)
+        self.state = value
 
     @property
     def state(self) -> bool:
